@@ -1,0 +1,50 @@
+name: Build and publish APK
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/release-apk.yml'
+permissions:
+  contents: write
+concurrency:
+  group: apk-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+      - name: Build APK and run unit tests
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug testDebugUnitTest --no-daemon --console=plain
+      - name: Prepare APK and checksum
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/AgroCalc-1.0-debug.apk
+          cd dist
+          sha256sum AgroCalc-1.0-debug.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgroCalc-APK
+          path: dist/*
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          ## Установка без сборки
+          Скачайте AgroCalc-1.0-debug.apk из Assets на телефон с Android 7.0 или новее и откройте файл для установки. Android Studio не нужна.
+
+          Это тестовая сборка с debug-подписью. Для обновления ранее установленной версии требуется совпадающая подпись. Перед удалением старой версии сохраните резервную копию JSON в приложении.
+
+          Возможности: поголовье, корма и склад, финансы, события, вес и ветеринарные записи, резервные копии JSON, экспорт CSV/PDF.
+
+          APK собран GitHub Actions; unit-тесты выполнены. Проверка запуска на устройстве не выполнялась. Контрольная сумма находится в SHA256SUMS.txt.
+          NOTES
+          gh release create v1.0.0 dist/* --target "$GITHUB_SHA" --title "AgroCalc 1.0 — APK для Android" --notes-file release-notes.md
